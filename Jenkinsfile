@@ -29,10 +29,19 @@ pipeline {
     stage('Install Dependencies') {
       steps {
         sh '''
-          python3 -m venv ${VENV_DIR}
+          PYTHON_BIN="${PYTHON_BIN:-/opt/homebrew/bin/python3}"
+          echo "Using python binary: ${PYTHON_BIN}"
+          if [ ! -x "${PYTHON_BIN}" ]; then
+            echo "Configured PYTHON_BIN is not executable: ${PYTHON_BIN}"
+            echo "Set PYTHON_BIN in Jenkins to your Python 3.10+ path."
+            exit 1
+          fi
+          "${PYTHON_BIN}" -m venv ${VENV_DIR}
           . ${VENV_DIR}/bin/activate
+          python --version
+          pip --version
           pip install --upgrade pip
-          pip install -e .[dev]
+          pip install -e '.[dev]'
         '''
       }
     }
@@ -91,11 +100,18 @@ pipeline {
         . ${VENV_DIR}/bin/activate
         python scripts/notify.py --status success --message "Metaflow pipeline completed"
       '''
-      emailext(
-        to: "${ALERT_EMAIL_TO}",
-        subject: "[SUCCESS] ${JOB_NAME} #${BUILD_NUMBER}",
-        body: "Build succeeded: ${BUILD_URL}"
-      )
+      script {
+        def alertEmailToSafe = env.ALERT_EMAIL_TO ?: ""
+        if (alertEmailToSafe.trim()) {
+          emailext(
+            to: alertEmailToSafe,
+            subject: "[SUCCESS] ${JOB_NAME} #${BUILD_NUMBER}",
+            body: "Build succeeded: ${BUILD_URL}"
+          )
+        } else {
+          echo 'ALERT_EMAIL_TO is empty; skipping success email notification.'
+        }
+      }
     }
 
     failure {
@@ -103,11 +119,18 @@ pipeline {
         . ${VENV_DIR}/bin/activate
         python scripts/notify.py --status failure --message "Metaflow pipeline failed"
       '''
-      emailext(
-        to: "${ALERT_EMAIL_TO}",
-        subject: "[FAILURE] ${JOB_NAME} #${BUILD_NUMBER}",
-        body: "Build failed: ${BUILD_URL}"
-      )
+      script {
+        def alertEmailToSafe = env.ALERT_EMAIL_TO ?: ""
+        if (alertEmailToSafe.trim()) {
+          emailext(
+            to: alertEmailToSafe,
+            subject: "[FAILURE] ${JOB_NAME} #${BUILD_NUMBER}",
+            body: "Build failed: ${BUILD_URL}"
+          )
+        } else {
+          echo 'ALERT_EMAIL_TO is empty; skipping failure email notification.'
+        }
+      }
       slackSend(
         channel: '#mlops-alerts',
         color: 'danger',
