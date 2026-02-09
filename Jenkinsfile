@@ -36,11 +36,17 @@ pipeline {
             echo "Set PYTHON_BIN in Jenkins to your Python 3.10+ path."
             exit 1
           fi
-          "${PYTHON_BIN}" -m venv ${VENV_DIR}
+          if ! "${PYTHON_BIN}" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)'; then
+            echo "Configured PYTHON_BIN version is too old."
+            "${PYTHON_BIN}" --version || true
+            echo "Please set PYTHON_BIN to Python 3.10+."
+            exit 1
+          fi
+          "${PYTHON_BIN}" -m venv --clear ${VENV_DIR}
           ${VENV_DIR}/bin/python3 --version
-          ${VENV_DIR}/bin/pip --version
-          ${VENV_DIR}/bin/pip install --upgrade pip
-          ${VENV_DIR}/bin/pip install -e '.[dev]'
+          ${VENV_DIR}/bin/python3 -m pip --version
+          ${VENV_DIR}/bin/python3 -m pip install --upgrade pip
+          ${VENV_DIR}/bin/python3 -m pip install -e '.[dev]'
         '''
       }
     }
