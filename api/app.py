@@ -93,3 +93,5 @@ def predict(request: PredictRequest) -> dict:
         "count": len(response_rows),
         "predictions": response_rows,
     }
+
+#test
