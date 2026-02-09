@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fraud-mlops-stack"
+version = "0.1.0"
+description = "Metaflow + Jenkins + AWS Step Functions/Batch + Databricks/Snowflake reference implementation"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "metaflow>=2.11.0",
+  "numpy>=1.26.0",
+  "pandas>=2.1.0",
+  "pyarrow>=14.0.0",
+  "torch>=2.1.0",
+  "fastapi>=0.111.0",
+  "uvicorn[standard]>=0.29.0",
+  "pydantic>=2.7.0",
+  "boto3>=1.34.0",
+  "snowflake-connector-python>=3.10.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+  "ruff>=0.5.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "."]
+testpaths = ["tests"]
+
