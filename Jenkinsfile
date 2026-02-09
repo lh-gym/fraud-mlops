@@ -37,11 +37,10 @@ pipeline {
             exit 1
           fi
           "${PYTHON_BIN}" -m venv ${VENV_DIR}
-          . ${VENV_DIR}/bin/activate
-          python --version
-          pip --version
-          pip install --upgrade pip
-          pip install -e '.[dev]'
+          ${VENV_DIR}/bin/python3 --version
+          ${VENV_DIR}/bin/pip --version
+          ${VENV_DIR}/bin/pip install --upgrade pip
+          ${VENV_DIR}/bin/pip install -e '.[dev]'
         '''
       }
     }
@@ -49,8 +48,7 @@ pipeline {
     stage('Unit Tests') {
       steps {
         sh '''
-          . ${VENV_DIR}/bin/activate
-          pytest -q
+          ${VENV_DIR}/bin/python3 -m pytest -q
         '''
       }
     }
@@ -58,12 +56,11 @@ pipeline {
     stage('Run Metaflow') {
       steps {
         sh '''
-          . ${VENV_DIR}/bin/activate
           if [ "${USE_STEP_FUNCTIONS}" = "true" ]; then
-            python flows/fraud_detection_flow.py --with step-functions --with batch create || true
-            python flows/fraud_detection_flow.py --with step-functions trigger
+            ${VENV_DIR}/bin/python3 flows/fraud_detection_flow.py --with step-functions --with batch create || true
+            ${VENV_DIR}/bin/python3 flows/fraud_detection_flow.py --with step-functions trigger
           else
-            python flows/fraud_detection_flow.py run --sample-size 25000
+            ${VENV_DIR}/bin/python3 flows/fraud_detection_flow.py run --sample-size 25000
           fi
         '''
       }
@@ -72,8 +69,7 @@ pipeline {
     stage('Log Metaflow Run') {
       steps {
         sh '''
-          . ${VENV_DIR}/bin/activate
-          python scripts/log_metaflow_run.py
+          ${VENV_DIR}/bin/python3 scripts/log_metaflow_run.py
         '''
       }
     }
@@ -97,8 +93,7 @@ pipeline {
   post {
     success {
       sh '''
-        . ${VENV_DIR}/bin/activate
-        python scripts/notify.py --status success --message "Metaflow pipeline completed"
+        ${VENV_DIR}/bin/python3 scripts/notify.py --status success --message "Metaflow pipeline completed"
       '''
       script {
         def alertEmailToSafe = env.ALERT_EMAIL_TO ?: ""
@@ -116,8 +111,7 @@ pipeline {
 
     failure {
       sh '''
-        . ${VENV_DIR}/bin/activate
-        python scripts/notify.py --status failure --message "Metaflow pipeline failed"
+        ${VENV_DIR}/bin/python3 scripts/notify.py --status failure --message "Metaflow pipeline failed"
       '''
       script {
         def alertEmailToSafe = env.ALERT_EMAIL_TO ?: ""
@@ -131,11 +125,17 @@ pipeline {
           echo 'ALERT_EMAIL_TO is empty; skipping failure email notification.'
         }
       }
-      slackSend(
-        channel: '#mlops-alerts',
-        color: 'danger',
-        message: "Build failed: ${JOB_NAME} #${BUILD_NUMBER} ${BUILD_URL}"
-      )
+      script {
+        try {
+          slackSend(
+            channel: '#mlops-alerts',
+            color: 'danger',
+            message: "Build failed: ${JOB_NAME} #${BUILD_NUMBER} ${BUILD_URL}"
+          )
+        } catch (Throwable err) {
+          echo "slackSend unavailable; skipping Slack notification. ${err.class.simpleName}"
+        }
+      }
     }
 
     always {
