@@ -55,10 +55,12 @@ def _build_task_environment_variables(output_uri: str) -> dict[str, str]:
         "AZURE_STORAGE_ACCOUNT_NAME": os.getenv("AZURE_STORAGE_ACCOUNT_NAME", "").strip(),
         "AZURE_STORAGE_SAS_TOKEN": _normalize_sas_token(os.getenv("AZURE_STORAGE_SAS_TOKEN", "")),
         "LAKEHOUSE_URI": output_uri,
-        "METAFLOW_DATASTORE_SYSROOT_AZURE": (
-            os.getenv("METAFLOW_DATASTORE_SYSROOT_AZURE", "").strip() or output_uri
-        ),
-        "METAFLOW_DEFAULT_DATASTORE": os.getenv("METAFLOW_DEFAULT_DATASTORE", "azure").strip() or "azure",
+        # Keep Metaflow's own datastore local by default on Databricks to avoid writing into
+        # read-only /Workspace/Repos paths. The pipeline outputs still go to LAKEHOUSE_URI.
+        "METAFLOW_DEFAULT_DATASTORE": os.getenv("METAFLOW_DEFAULT_DATASTORE", "local").strip() or "local",
+        # Only needed if you explicitly opt into Metaflow's Azure datastore (requires additional
+        # Azure identity config inside Databricks).
+        "METAFLOW_DATASTORE_SYSROOT_AZURE": os.getenv("METAFLOW_DATASTORE_SYSROOT_AZURE", "").strip(),
         "METAFLOW_DATASTORE_LOCAL_DIR": os.getenv("METAFLOW_DATASTORE_LOCAL_DIR", "/tmp/metaflow").strip()
         or "/tmp/metaflow",
         "METAFLOW_HOME": os.getenv("METAFLOW_HOME", "/tmp/metaflow").strip() or "/tmp/metaflow",
@@ -185,11 +187,11 @@ class DatabricksRuntimeConfig:
         if not output_uri:
             raise ValueError("Provide --output-uri or set LAKEHOUSE_URI.")
         task_environment_variables = _build_task_environment_variables(output_uri)
-        metaflow_datastore = task_environment_variables.get("METAFLOW_DEFAULT_DATASTORE", "azure").strip() or "azure"
+        metaflow_datastore = task_environment_variables.get("METAFLOW_DEFAULT_DATASTORE", "local").strip() or "local"
         metaflow_datastore_root = ""
         if metaflow_datastore == "azure":
             metaflow_datastore_root = (
-                task_environment_variables.get("METAFLOW_DATASTORE_SYSROOT_AZURE", "").strip() or output_uri
+                task_environment_variables.get("METAFLOW_DATASTORE_SYSROOT_AZURE", "").strip()
             )
 
         if output_uri.startswith("abfss://"):
@@ -296,6 +298,8 @@ def _build_job_settings(config: DatabricksRuntimeConfig) -> dict[str, Any]:
             "parameters": task_parameters,
             "source": "GIT",
         },
+        # Install dependencies (including metaflow) into the job runtime.
+        "libraries": config.pypi_libraries,
         "environment_variables": config.task_environment_variables,
         "timeout_seconds": config.wait_timeout_sec,
     }

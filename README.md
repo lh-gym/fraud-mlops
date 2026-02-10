@@ -122,8 +122,8 @@ export DATABRICKS_SERVERLESS=true              # for serverless-only workspaces
 export LAKEHOUSE_URI="abfss://<container>@<account>.dfs.core.windows.net/fraud"
 export AZURE_STORAGE_ACCOUNT_NAME="<storage-account-name>"
 export AZURE_STORAGE_SAS_TOKEN="<sas-token-without-leading-?>"
-export METAFLOW_DEFAULT_DATASTORE="azure"
-export METAFLOW_DATASTORE_SYSROOT_AZURE="$LAKEHOUSE_URI"
+export METAFLOW_DEFAULT_DATASTORE="local"
+export METAFLOW_DATASTORE_LOCAL_DIR="/tmp/metaflow"
 python scripts/run_databricks_job.py --sample-size 20000
 ```
 
