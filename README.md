@@ -120,6 +120,10 @@ export DATABRICKS_GIT_URL="https://github.com/<org>/<repo>"
 export DATABRICKS_GIT_BRANCH="main"
 export DATABRICKS_SERVERLESS=true              # for serverless-only workspaces
 export LAKEHOUSE_URI="abfss://<container>@<account>.dfs.core.windows.net/fraud"
+export AZURE_STORAGE_ACCOUNT_NAME="<storage-account-name>"
+export AZURE_STORAGE_SAS_TOKEN="<sas-token-without-leading-?>"
+export METAFLOW_DEFAULT_DATASTORE="azure"
+export METAFLOW_DATASTORE_SYSROOT_AZURE="$LAKEHOUSE_URI"
 python scripts/run_databricks_job.py --sample-size 20000
 ```
 
@@ -135,6 +139,9 @@ Script behavior:
 
 - creates or updates a Databricks Job (`DATABRICKS_JOB_NAME`)
 - runs `flows/fraud_detection_flow.py` from your Git repo on Databricks compute
+- uses serverless-compatible task config (`environment_key`) when `DATABRICKS_SERVERLESS=true`
+- injects task `environment_variables` into Databricks runtime (including ADLS and Metaflow datastore env vars)
+- passes `--datastore` and `--datastore-root` explicitly to Metaflow CLI to avoid read-only local `.metaflow` fallback
 - waits for completion and prints run URL and status
 - when a run fails, it prints task state and `runs/get-output` diagnostics automatically
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 import json
 import os
 import sys
@@ -22,19 +21,14 @@ from metaflow import (
 def _resolve_project_root() -> Path:
     file_ref = globals().get("__file__")
     if file_ref:
-        return Path(str(file_ref)).resolve().parents[1]
+        base_dir = Path(str(file_ref)).resolve().parents[1]
+    else:
+        base_dir = Path(os.getcwd()).resolve()
 
-    frame = inspect.currentframe()
-    if frame is not None:
-        candidate_from_frame = Path(str(frame.f_code.co_filename)).resolve()
-        if candidate_from_frame.suffix == ".py":
-            return candidate_from_frame.parents[1]
-
-    cwd = Path.cwd().resolve()
-    for candidate in [cwd, *cwd.parents]:
+    for candidate in [base_dir, *base_dir.parents]:
         if (candidate / "src" / "fraud_mlops").exists() and (candidate / "pyproject.toml").exists():
             return candidate
-    return cwd
+    return base_dir
 
 
 PROJECT_ROOT = _resolve_project_root()

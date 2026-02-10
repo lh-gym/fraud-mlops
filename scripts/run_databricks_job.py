@@ -43,6 +43,29 @@ def _parse_pypi_libs(raw_value: str) -> list[dict[str, dict[str, str]]]:
     return [{"pypi": {"package": token}} for token in tokens]
 
 
+def _normalize_sas_token(token: str) -> str:
+    normalized = token.strip()
+    if normalized.startswith("?"):
+        normalized = normalized[1:]
+    return normalized
+
+
+def _build_task_environment_variables(output_uri: str) -> dict[str, str]:
+    env_vars = {
+        "AZURE_STORAGE_ACCOUNT_NAME": os.getenv("AZURE_STORAGE_ACCOUNT_NAME", "").strip(),
+        "AZURE_STORAGE_SAS_TOKEN": _normalize_sas_token(os.getenv("AZURE_STORAGE_SAS_TOKEN", "")),
+        "LAKEHOUSE_URI": output_uri,
+        "METAFLOW_DATASTORE_SYSROOT_AZURE": (
+            os.getenv("METAFLOW_DATASTORE_SYSROOT_AZURE", "").strip() or output_uri
+        ),
+        "METAFLOW_DEFAULT_DATASTORE": os.getenv("METAFLOW_DEFAULT_DATASTORE", "azure").strip() or "azure",
+        "METAFLOW_DATASTORE_LOCAL_DIR": os.getenv("METAFLOW_DATASTORE_LOCAL_DIR", "/tmp/metaflow").strip()
+        or "/tmp/metaflow",
+        "METAFLOW_HOME": os.getenv("METAFLOW_HOME", "/tmp/metaflow").strip() or "/tmp/metaflow",
+    }
+    return env_vars
+
+
 def _env_required(name: str) -> str:
     value = os.getenv(name, "").strip()
     if not value:
@@ -123,6 +146,9 @@ class DatabricksRuntimeConfig:
     sample_size: int
     output_uri: str
     training_backend: str
+    metaflow_datastore: str
+    metaflow_datastore_root: str
+    task_environment_variables: dict[str, str]
     use_serverless: bool
     serverless_environment_key: str
     serverless_environment_version: str
@@ -158,6 +184,25 @@ class DatabricksRuntimeConfig:
         output_uri = args.output_uri or os.getenv("LAKEHOUSE_URI", "").strip()
         if not output_uri:
             raise ValueError("Provide --output-uri or set LAKEHOUSE_URI.")
+        task_environment_variables = _build_task_environment_variables(output_uri)
+        metaflow_datastore = task_environment_variables.get("METAFLOW_DEFAULT_DATASTORE", "azure").strip() or "azure"
+        metaflow_datastore_root = ""
+        if metaflow_datastore == "azure":
+            metaflow_datastore_root = (
+                task_environment_variables.get("METAFLOW_DATASTORE_SYSROOT_AZURE", "").strip() or output_uri
+            )
+
+        if output_uri.startswith("abfss://"):
+            missing_azure_env = [
+                key
+                for key in ["AZURE_STORAGE_ACCOUNT_NAME", "AZURE_STORAGE_SAS_TOKEN"]
+                if not task_environment_variables.get(key, "").strip()
+            ]
+            if missing_azure_env:
+                raise ValueError(
+                    "For abfss:// output, set required env vars: "
+                    + ", ".join(missing_azure_env)
+                )
 
         use_serverless = _env_bool("DATABRICKS_SERVERLESS", default=False)
         existing_cluster_id = os.getenv("DATABRICKS_EXISTING_CLUSTER_ID", "").strip()
@@ -179,6 +224,9 @@ class DatabricksRuntimeConfig:
             sample_size=args.sample_size,
             output_uri=output_uri,
             training_backend=os.getenv("DATABRICKS_TRAINING_BACKEND", "multiprocessing").strip(),
+            metaflow_datastore=metaflow_datastore,
+            metaflow_datastore_root=metaflow_datastore_root,
+            task_environment_variables=task_environment_variables,
             use_serverless=use_serverless,
             serverless_environment_key=os.getenv("DATABRICKS_SERVERLESS_ENVIRONMENT_KEY", "default").strip(),
             serverless_environment_version=os.getenv("DATABRICKS_SERVERLESS_ENVIRONMENT_VERSION", "2").strip(),
@@ -219,14 +267,27 @@ def _find_job_id_by_name(host: str, token: str, job_name: str) -> int | None:
 
 def _build_job_settings(config: DatabricksRuntimeConfig) -> dict[str, Any]:
     task_parameters = [
-        "run",
-        "--sample-size",
-        str(config.sample_size),
-        "--output-uri",
-        config.output_uri,
-        "--training-backend",
-        config.training_backend,
+        "--datastore",
+        config.metaflow_datastore,
     ]
+    if config.metaflow_datastore_root:
+        task_parameters.extend(
+            [
+                "--datastore-root",
+                config.metaflow_datastore_root,
+            ]
+        )
+    task_parameters.extend(
+        [
+            "run",
+            "--sample-size",
+            str(config.sample_size),
+            "--output-uri",
+            config.output_uri,
+            "--training-backend",
+            config.training_backend,
+        ]
+    )
 
     task: dict[str, Any] = {
         "task_key": "run_fraud_metaflow",
@@ -235,6 +296,7 @@ def _build_job_settings(config: DatabricksRuntimeConfig) -> dict[str, Any]:
             "parameters": task_parameters,
             "source": "GIT",
         },
+        "environment_variables": config.task_environment_variables,
         "timeout_seconds": config.wait_timeout_sec,
     }
     if config.use_serverless:
@@ -276,11 +338,15 @@ def _build_job_settings(config: DatabricksRuntimeConfig) -> dict[str, Any]:
 
 
 def _candidate_run_ids(parent_run_id: int, run_response: dict[str, Any]) -> list[int]:
-    candidate_ids: list[int] = [parent_run_id]
+    child_ids: list[int] = []
     for task in run_response.get("tasks", []):
         run_id = _to_int(task.get("run_id"))
         if run_id is not None:
-            candidate_ids.append(run_id)
+            child_ids.append(run_id)
+    if child_ids:
+        candidate_ids = child_ids
+    else:
+        candidate_ids = [parent_run_id]
     seen: set[int] = set()
     deduped: list[int] = []
     for run_id in candidate_ids:
