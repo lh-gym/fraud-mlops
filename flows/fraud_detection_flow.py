@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import sys
@@ -22,6 +23,12 @@ def _resolve_project_root() -> Path:
     file_ref = globals().get("__file__")
     if file_ref:
         return Path(str(file_ref)).resolve().parents[1]
+
+    frame = inspect.currentframe()
+    if frame is not None:
+        candidate_from_frame = Path(str(frame.f_code.co_filename)).resolve()
+        if candidate_from_frame.suffix == ".py":
+            return candidate_from_frame.parents[1]
 
     cwd = Path.cwd().resolve()
     for candidate in [cwd, *cwd.parents]:
