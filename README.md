@@ -142,6 +142,7 @@ Script behavior:
 - uses serverless-compatible task config (`environment_key`) when `DATABRICKS_SERVERLESS=true`
 - injects task `environment_variables` into Databricks runtime (including ADLS and Metaflow datastore env vars)
 - passes `--datastore` and `--datastore-root` explicitly to Metaflow CLI to avoid read-only local `.metaflow` fallback
+- installs task dependencies from `requirements.txt` by default (`DATABRICKS_REQUIREMENTS_FILE`), unless `DATABRICKS_PYPI_LIBS` is set
 - waits for completion and prints run URL and status
 - when a run fails, it prints task state and `runs/get-output` diagnostics automatically
 

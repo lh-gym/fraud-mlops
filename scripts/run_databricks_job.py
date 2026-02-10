@@ -43,6 +43,24 @@ def _parse_pypi_libs(raw_value: str) -> list[dict[str, dict[str, str]]]:
     return [{"pypi": {"package": token}} for token in tokens]
 
 
+def _read_requirements_file(path: str) -> list[str]:
+    if not path:
+        return []
+    if not os.path.isfile(path):
+        return []
+
+    dependencies: list[str] = []
+    with open(path, encoding="utf-8") as handle:
+        for raw_line in handle:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith(("-r ", "--requirement ", "-c ", "--constraint ")):
+                continue
+            dependencies.append(line)
+    return dependencies
+
+
 def _normalize_sas_token(token: str) -> str:
     normalized = token.strip()
     if normalized.startswith("?"):
@@ -175,14 +193,21 @@ class DatabricksRuntimeConfig:
         if not git_url:
             raise ValueError("DATABRICKS_GIT_URL is required (for example: https://github.com/<org>/<repo>).")
 
-        libs_raw = os.getenv(
-            "DATABRICKS_PYPI_LIBS",
-            (
-                "metaflow==2.19.19,"
-                "numpy>=1.26.0,pandas>=2.1.0,pyarrow>=14.0.0,adlfs>=2024.7.0,"
-                "torch>=2.1.0,boto3>=1.34.0,snowflake-connector-python>=3.10.0"
-            ),
-        )
+        requirements_file = os.getenv("DATABRICKS_REQUIREMENTS_FILE", "requirements.txt").strip()
+        requirements_deps = _read_requirements_file(requirements_file)
+        libs_raw = os.getenv("DATABRICKS_PYPI_LIBS", "").strip()
+        if libs_raw:
+            pypi_libraries = _parse_pypi_libs(libs_raw)
+        elif requirements_deps:
+            pypi_libraries = [{"pypi": {"package": dep}} for dep in requirements_deps]
+        else:
+            pypi_libraries = _parse_pypi_libs(
+                (
+                    "metaflow==2.19.17,"
+                    "numpy>=1.26.0,pandas>=2.1.0,pyarrow>=14.0.0,adlfs>=2024.7.0,"
+                    "torch>=2.1.0,boto3>=1.34.0,snowflake-connector-python>=3.10.0"
+                )
+            )
         output_uri = args.output_uri or os.getenv("LAKEHOUSE_URI", "").strip()
         if not output_uri:
             raise ValueError("Provide --output-uri or set LAKEHOUSE_URI.")
@@ -237,7 +262,7 @@ class DatabricksRuntimeConfig:
             node_type_id=node_type_id,
             num_workers=_env_int("DATABRICKS_NUM_WORKERS", 2),
             autotermination_minutes=_env_int("DATABRICKS_AUTOTERMINATION_MINUTES", 30),
-            pypi_libraries=_parse_pypi_libs(libs_raw),
+            pypi_libraries=pypi_libraries,
             wait_timeout_sec=_env_int("DATABRICKS_WAIT_TIMEOUT_SEC", 7200),
             poll_interval_sec=_env_int("DATABRICKS_POLL_INTERVAL_SEC", 20),
             configured_job_id=(args.job_id or os.getenv("DATABRICKS_JOB_ID", "")).strip(),
