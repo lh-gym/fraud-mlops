@@ -18,7 +18,19 @@ from metaflow import (
     step,
 )
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+def _resolve_project_root() -> Path:
+    file_ref = globals().get("__file__")
+    if file_ref:
+        return Path(str(file_ref)).resolve().parents[1]
+
+    cwd = Path.cwd().resolve()
+    for candidate in [cwd, *cwd.parents]:
+        if (candidate / "src" / "fraud_mlops").exists() and (candidate / "pyproject.toml").exists():
+            return candidate
+    return cwd
+
+
+PROJECT_ROOT = _resolve_project_root()
 SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
